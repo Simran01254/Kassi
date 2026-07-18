@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/assets/cover.png" alt="kassi: divines disaster, crafts the cure" width="400" /></p>
 
-# kassi
+# kassi-CLI
 
 > Divines disaster, crafts the cure.
 
