@@ -1,0 +1,13 @@
+digraph { graph [rankdir=TB];
+  kassi  [label="kassi (orchestrator)"];
+  k6     [label="Grafana k6 MCP"];
+  target [label="target app (HTTP API)"];
+  ent    [label="Splunk Enterprise"];
+  splunk [label="Splunk MCP Server"];
+  kassi  -> k6     [label="call_upstream"];
+  k6     -> target [label="k6 load"];
+  target -> ent    [label="telemetry"];
+  ent    -> splunk [label="windowed SPL"];
+  splunk -> kassi  [label="findings"];
+  kassi  -> ent    [label="HEC: run + steps"];
+}

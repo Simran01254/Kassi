@@ -1,0 +1,141 @@
+<dashboard theme="dark" version="1.1" stylesheet="kassi.css">
+  <label>kassi: change impact, read from Splunk</label>
+  <description>Client-side k6 metrics joined to the target's server-side telemetry over the exact test window, plus the agent's own state-machine walk (one event per Burr phase, keyed by app_id). Each run is published to index=kassi_runs by kassi's report phase.</description>
+
+  <row>
+    <panel>
+      <single>
+        <title>latest verdict</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | eval kind=case(match(verdict,"regression"),"REGRESSION", match(verdict,"throttling"),"THROTTLED", match(verdict,"degradation"),"DEGRADING", match(verdict,"passed"),"HEALTHY", true(),"FAILED") | fields kind</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="useColors">0</option>
+        <option name="height">90</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>the reading (latest run)</title>
+      <table>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | eval "client p95"=k6_p95_ms." ms", "client failed"=k6_failed_pct."%", "server p95"=srv_p95_ms." ms", "server 5xx"=srv_5xx, "root cause"=coalesce(root_cause,"none"), "forecast p95"=forecast_p95_ms." ms (".forecaster.")" | rename worst_path AS endpoint | table endpoint "client p95" "client failed" "server p95" "server 5xx" "root cause" "forecast p95"</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">1</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <single>
+        <title>recommendation</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | table recommendation</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="useColors">0</option>
+        <option name="height">90</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>the agent's walk — Burr state machine, latest run</title>
+      <table>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:step [search index=kassi_runs sourcetype=kassi:run | head 1 | return app_id] | sort seq | eval Card=card_num."  ".card | rename phase AS Phase, status AS Outcome, tool_calls AS "Calls", tools AS "Tool calls" | table seq Card Phase Outcome "Calls" "Tool calls"</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+        <format type="color" field="Outcome">
+          <colorPalette type="map">{"ok":#53a051,"grounded":#53a051,"regression":#f456a1,"ungrounded":#f456a1,"degraded":#f8be34,"timeout (scaffold fallback)":#f8be34}</colorPalette>
+        </format>
+      </table>
+    </panel>
+    <panel>
+      <title>step outcomes across runs</title>
+      <chart>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:step | stats count BY status | sort - count</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.backgroundColor">transparent</option>
+        <option name="charting.fieldColors">{"count":0xf456a1}</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">steps</option>
+        <option name="charting.axisTitleY.text">outcome</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <chart>
+        <title>client vs server p95 across runs (the join)</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | sort 0 _time | table _time k6_p95_ms srv_p95_ms</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.backgroundColor">transparent</option>
+        <option name="charting.axisTitleX.text">run</option>
+        <option name="charting.axisTitleY.text">p95 (ms)</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.showMarkers">true</option>
+        <option name="charting.lineWidth">3</option>
+        <option name="charting.fieldColors">{"k6_p95_ms":0xb05c86,"srv_p95_ms":0xf456a1}</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>server-side errors by endpoint (last 60m)</title>
+        <search>
+          <query>index=web sourcetype=access_json | stats count AS requests, sum(eval(if(status&gt;=500,1,0))) AS errors, perc95(response_time) AS p95_ms BY path | eval p95_ms=round(p95_ms,1) | sort - errors</query>
+          <earliest>-60m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.backgroundColor">transparent</option>
+        <option name="charting.axisTitleX.text">endpoint</option>
+        <option name="charting.axisTitleY.text">count / ms</option>
+        <option name="charting.fieldColors">{"errors":0xf456a1,"requests":0x6b6b78,"p95_ms":0xf8be34}</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <table>
+        <title>run history</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | sort - _time | eval when=strftime(_time,"%Y-%m-%d %H:%M") | table when mode endpoints verdict k6_reqs k6_p95_ms k6_failed_pct srv_5xx root_cause forecaster forecast_p95_ms | head 25</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">25</option>
+        <format type="color" field="srv_5xx">
+          <colorPalette type="list">[0x53a051,0xf456a1]</colorPalette>
+          <scale type="threshold">1</scale>
+        </format>
+      </table>
+    </panel>
+  </row>
+</dashboard>
